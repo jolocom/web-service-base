@@ -1,6 +1,6 @@
 {
   "name": "@jolocom/web-service-base",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Generic Jolocom Web Service for HTTP and WebSockets support for the Jolocom SDK",
   "main": "dist/index.js",
   "repository": "https://github.com/jolocom/web-service-base",
