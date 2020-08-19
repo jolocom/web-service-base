@@ -29,7 +29,7 @@ interface JWTDesc {
 interface RPCHandlerCtx {
   createChannel: ({ description: string }) => Promise<Channel>
   createInteractionCallbackURL: (cb: (payload: string) => Promise<JSONWebToken<any> | void>) => string
-  wrapJWT: (jwt: string) => Promise<JWTDesc>
+  wrapJWT: (jwt: string | JSONWebToken<any>) => Promise<JWTDesc>
 }
 
 interface RPCMap {
@@ -128,8 +128,15 @@ export class JolocomWebServiceBase {
     }
   }
 
-  async wrapJWT(jwt: string): Promise<JWTDesc> {
-    const token = JolocomLib.parse.interactionToken.fromJWT(jwt)
+  async wrapJWT(tokenOrJwt: string | JSONWebToken<any>): Promise<JWTDesc> {
+    let jwt: string, token: JSONWebToken<any>
+    if (typeof tokenOrJwt === 'string') {
+      jwt = tokenOrJwt
+      token = JolocomLib.parse.interactionToken.fromJWT(jwt)
+    } else {
+      token = tokenOrJwt
+      jwt = token.encode()
+    }
     const qr = await QRCode.toDataURL(jwt)
     return {
       id: token.nonce,
