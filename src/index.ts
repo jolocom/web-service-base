@@ -7,13 +7,13 @@ import { ChannelTransportType, Channel } from '@jolocom/sdk/js/src/lib/channels'
 import { Interaction } from '@jolocom/sdk/js/src/lib/interactionManager/interaction'
 import { InteractionTransportType, FlowType } from '@jolocom/sdk/js/src/lib/interactionManager/types'
 
-interface WebEndPoints {
+export interface WebEndPoints {
   interxn: string
   chan: string
   rpc: string
 }
 
-type WebServiceOptions = {
+export interface JolocomWebServiceOptions {
   publicHostport?: string
   tls?: boolean
   rpcMap?: RPCMap
@@ -26,8 +26,14 @@ interface JWTDesc {
   qr: string
 }
 
+interface RPCHandlerCtx {
+  createChannel: ({ description: string }) => Promise<Channel>
+  createInteractionCallbackURL: (cb: (payload: string) => Promise<JSONWebToken<any> | void>) => string
+  wrapJWT: (jwt: string) => Promise<JWTDesc>
+}
+
 interface RPCMap {
-  [key: string]: (request: any, ctx: JolocomWebServiceBase) => Promise<any>
+  [key: string]: (request: any, ctx: RPCHandlerCtx) => Promise<any>
 }
 
 const defaultRPCMap: RPCMap = {
@@ -44,7 +50,7 @@ export class JolocomWebServiceBase {
   protected enableTls: boolean
   protected paths: WebEndPoints
 
-  constructor(sdk: JolocomSDK, options: WebServiceOptions = {}){
+  constructor(sdk: JolocomSDK, options: JolocomWebServiceOptions = {}){
     this.sdk = sdk
     this.rpcMap = options.rpcMap || defaultRPCMap
     this.enableTls = !!options.tls
@@ -61,13 +67,13 @@ export class JolocomWebServiceBase {
     [id: string]: (payload: string) => Promise<JSONWebToken<any> | void>
   } = {}
 
-  public addCallback(cb: (payload: string) => Promise<JSONWebToken<any> | void>) {
+  createInteractionCallbackURL(cb: (payload: string) => Promise<JSONWebToken<any> | void>) {
     const id = uuidv4()
     this._callbacks[id] = cb
     return `${this.publicHttpUrl}${this.paths.interxn}/${id}`
   }
 
-  public async processCallback(cbId: string, payload: { token: string }) {
+  async processCallback(cbId: string, payload: { token: string }) {
     console.log('received callback!!', cbId, payload)
 
     const cb = this._callbacks[cbId]
@@ -80,7 +86,6 @@ export class JolocomWebServiceBase {
       return ''
     }
   }
-
 
   private _basePath = ''
 
@@ -95,30 +100,8 @@ export class JolocomWebServiceBase {
     return this._basePath
   }
 
-  createChannel(send: (msg: string) => void) {
-    return new WebChannel(this, send)
-  }
-
-  public async createChannelRequest({ description }: { description: string }): Promise<JWTDesc> {
+  async createChannel({ description }: { description: string }): Promise<Channel> {
     const wsUrl = `${this.publicWsUrl}${this.paths.chan}`
-    /* an improved API may look something like:
-      const interxn = await this.sdk.establishChannel(
-        {
-          description,
-          transports: [
-            {
-              type: ChannelTransportType.WebSockets,
-              args: wsUrl
-            }
-          ]
-        },
-        {
-          type: InteractionTransportType.HTTP,
-          args: callbackURL
-        }
-      )
-      const initToken = interxn.getMessages()[0]
-    */
     const initTokenJwt = await this.sdk.establishChannelRequestToken({
       description,
       transports: [
@@ -130,9 +113,7 @@ export class JolocomWebServiceBase {
     })
     const initInterxn = this.sdk.findInteraction(initTokenJwt)
     if (!initInterxn) throw new Error("interaction (that was just created) cannot be found???")
-    const ch = await this.sdk.channels.create(initInterxn)
-    const chReq = this.wrapJwt(initTokenJwt)
-    return chReq
+    return this.sdk.channels.create(initInterxn)
   }
 
   async processRPC(msg: { id: string, rpc: string, request: string }) {
@@ -147,7 +128,7 @@ export class JolocomWebServiceBase {
     }
   }
 
-  public async wrapJwt(jwt: string): Promise<JWTDesc> {
+  async wrapJWT(jwt: string): Promise<JWTDesc> {
     const token = JolocomLib.parse.interactionToken.fromJWT(jwt)
     const qr = await QRCode.toDataURL(jwt)
     return {
@@ -157,33 +138,3 @@ export class JolocomWebServiceBase {
     }
   }
 }
-
-class WebChannel {
-  ctx: JolocomWebServiceBase
-  sdkChan?: Channel
-  id?: string
-  send: (msg: string) => void
-
-  constructor(ctx: JolocomWebServiceBase, send: (msg: string) => void) {
-    this.ctx = ctx
-    this.send = send
-  }
-
-  async onMessage(msg: string) {
-    if (!msg) throw new Error('empty message!')
-
-    if (!this.sdkChan) {
-      this.sdkChan = await this.ctx.sdk.channels.findByJWT(msg)
-      if (!this.sdkChan) throw new Error('unknown channel!')
-      this.id = this.sdkChan.id
-      // @ts-ignore
-      this.sdkChan.transportAPI = {
-        send: this.send
-      }
-    }
-
-    this.sdkChan.processJWT(msg)
-  }
-
-}
-
