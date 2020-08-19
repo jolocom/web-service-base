@@ -120,7 +120,12 @@ export class JolocomWebServiceBase {
     const handler = this.rpcMap[msg.rpc]
     if (!handler) throw new Error('unknown RPC Call "' + msg.rpc + '"')
 
-    const response = await handler(msg.request, this)
+    const ctx: RPCHandlerCtx = {
+      wrapJWT: this.wrapJWT.bind(this),
+      createChannel: this.createChannel.bind(this),
+      createInteractionCallbackURL: this.createInteractionCallbackURL.bind(this)
+    }
+    const response = await handler(msg.request, ctx)
     return {
       id: msg.id,
       request: msg,
