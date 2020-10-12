@@ -1,11 +1,8 @@
 const uuidv4 = require('uuid').v4
 const QRCode = require("qrcode");
 
-import { JolocomSDK, JolocomLib, JSONWebToken } from '@jolocom/sdk'
-
-import { ChannelTransportType, Channel } from '@jolocom/sdk/js/src/lib/channels'
-import { Interaction } from '@jolocom/sdk/js/src/lib/interactionManager/interaction'
-import { InteractionTransportType, FlowType } from '@jolocom/sdk/js/src/lib/interactionManager/types'
+import { JolocomSDK, Agent, JolocomLib, JSONWebToken, ChannelTransportType } from '@jolocom/sdk'
+import { Channel } from '@jolocom/sdk/js/channels'
 
 export interface WebEndPoints {
   interxn: string
@@ -41,7 +38,7 @@ const defaultRPCMap: RPCMap = {
 }
 
 export class JolocomWebServiceBase {
-  sdk: JolocomSDK
+  agent: Agent
   rpcMap: RPCMap
 
   protected publicHostport?: string
@@ -50,8 +47,8 @@ export class JolocomWebServiceBase {
   protected enableTls: boolean
   protected paths: WebEndPoints
 
-  constructor(sdk: JolocomSDK, options: JolocomWebServiceOptions = {}){
-    this.sdk = sdk
+  constructor(agent: Agent, options: JolocomWebServiceOptions = {}){
+    this.agent = agent
     this.rpcMap = options.rpcMap || defaultRPCMap
     this.enableTls = !!options.tls
     this.publicHostport = options.publicHostport || 'localhost:9000'
@@ -102,7 +99,7 @@ export class JolocomWebServiceBase {
 
   async createChannel({ description }: { description: string }): Promise<Channel> {
     const wsUrl = `${this.publicWsUrl}${this.paths.chan}`
-    const initTokenJwt = await this.sdk.establishChannelRequestToken({
+    const initTokenJwt = await this.agent.establishChannelRequestToken({
       description,
       transports: [
         {
@@ -111,9 +108,9 @@ export class JolocomWebServiceBase {
         }
       ]
     })
-    const initInterxn = this.sdk.findInteraction(initTokenJwt)
+    const initInterxn = this.agent.findInteraction(initTokenJwt)
     if (!initInterxn) throw new Error("interaction (that was just created) cannot be found???")
-    return this.sdk.channels.create(initInterxn)
+    return this.agent.channels.create(initInterxn)
   }
 
   async processRPC(msg: { id: string, rpc: string, request: string }) {
