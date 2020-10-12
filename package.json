@@ -1,6 +1,6 @@
 {
   "name": "@jolocom/web-service-base",
-  "version": "3.0.0-rc1",
+  "version": "3.0.0-rc2",
   "description": "Generic Jolocom Web Service for HTTP and WebSockets support for the Jolocom SDK",
   "main": "dist/index.js",
   "repository": "https://github.com/jolocom/web-service-base",
@@ -10,13 +10,13 @@
     "dist"
   ],
   "devDependencies": {
-    "@jolocom/sdk": "^1.0.0-rc11",
+    "@jolocom/sdk": "^1.0.0-rc12",
     "@types/node": "^13.9.8",
     "jolocom-lib": "^5.1.0-rc10",
     "typescript": "3.6.3"
   },
   "peerDependencies": {
-    "@jolocom/sdk": "^0.14.1"
+    "@jolocom/sdk": "^1.0.0"
   },
   "dependencies": {
     "qrcode": "^1.4.4",
