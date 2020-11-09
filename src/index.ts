@@ -108,7 +108,7 @@ export class JolocomWebServiceBase {
         }
       ]
     })
-    const initInterxn = this.agent.findInteraction(initTokenJwt)
+    const initInterxn = await this.agent.findInteraction(initTokenJwt)
     if (!initInterxn) throw new Error("interaction (that was just created) cannot be found???")
     return this.agent.channels.create(initInterxn)
   }

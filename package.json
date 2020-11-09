@@ -10,9 +10,9 @@
     "dist"
   ],
   "devDependencies": {
-    "@jolocom/sdk": "^1.0.0-rc12",
+    "@jolocom/sdk": "^1.0.0-rc15",
     "@types/node": "^13.9.8",
-    "jolocom-lib": "^5.1.0-rc10",
+    "jolocom-lib": "^5.1.0-rc12",
     "typescript": "3.6.3"
   },
   "peerDependencies": {
