@@ -25,12 +25,12 @@ interface JWTDesc {
 
 interface RPCHandlerCtx {
   createChannel: ({ description: string }) => Promise<Channel>
-  createInteractionCallbackURL: (cb: (payload: string) => Promise<JSONWebToken<any> | void>) => string
+  createInteractionCallbackURL: (cb: (payload: string, websocket: WebSocket | undefined) => Promise<JSONWebToken<any> | void>) => string
   wrapJWT: (jwt: string | JSONWebToken<any>) => Promise<JWTDesc>
 }
 
 interface RPCMap {
-  [key: string]: (request: any, ctx: RPCHandlerCtx) => Promise<any>
+  [key: string]: (request: any, ctx: RPCHandlerCtx, websocket: WebSocket | undefined) => Promise<any>
 }
 
 const defaultRPCMap: RPCMap = {
@@ -40,6 +40,7 @@ const defaultRPCMap: RPCMap = {
 export class JolocomWebServiceBase {
   agent: Agent
   rpcMap: RPCMap
+  clientsWS = [];
 
   protected publicHostport?: string
   protected publicWsUrl!: string
@@ -61,10 +62,10 @@ export class JolocomWebServiceBase {
   }
 
   protected _callbacks: {
-    [id: string]: (payload: string) => Promise<JSONWebToken<any> | void>
+    [id: string]: (payload: string, websocket) => Promise<JSONWebToken<any> | void>
   } = {}
 
-  createInteractionCallbackURL(cb: (payload: string) => Promise<JSONWebToken<any> | void>) {
+  createInteractionCallbackURL(cb: (payload: string, websocket: WebSocket | undefined) => Promise<JSONWebToken<any> | void>) {
     const id = uuidv4()
     this._callbacks[id] = cb
     return `${this.publicHttpUrl}${this.paths.interxn}/${id}`
@@ -75,7 +76,28 @@ export class JolocomWebServiceBase {
 
     const cb = this._callbacks[cbId]
     if (!cb) throw new Error('no callback for ' + cbId)
-    const tokenResp = await cb(payload.token)
+    const interxn = await this.agent.processJWT(payload.token);
+
+    // Pass the websocket to the call back to enable it to send addional custom data
+    const tokenResp = await cb(payload.token, this.clientsWS[interxn.id])
+
+    try {
+      if (this.clientsWS[interxn.id]) {
+        console.log("Client's WebSocket has been added to the list for the interxn.id", interxn.id);
+        const message = JSON.stringify({
+          id: interxn.id,
+          status: "success",
+          response: tokenResp,
+        });
+        this.clientsWS[interxn.id].send(message);
+      }
+    } catch (error) {
+      if (this.clientsWS[interxn.id])
+        this.clientsWS[interxn.id].send(
+          JSON.stringify({ id: interxn.id, status: "error", error })
+        );
+    }
+
     if (tokenResp) {
       return { token: tokenResp.encode() } // NOTE: legacy, smartwallet 1.9 expects this
     } else {
@@ -113,7 +135,7 @@ export class JolocomWebServiceBase {
     return this.agent.channels.create(initInterxn)
   }
 
-  async processRPC(msg: { id: string, rpc: string, request: string }) {
+  async processRPC(msg: { id: string, rpc: string, request: string }, websocket: WebSocket | undefined) {
     const handler = this.rpcMap[msg.rpc]
     if (!handler) throw new Error('unknown RPC Call "' + msg.rpc + '"')
 
@@ -122,7 +144,12 @@ export class JolocomWebServiceBase {
       createChannel: this.createChannel.bind(this),
       createInteractionCallbackURL: this.createInteractionCallbackURL.bind(this)
     }
-    const response = await handler(msg.request, ctx)
+    const response = await handler(msg.request, ctx, websocket)
+
+    if (websocket) {
+        const callbackID = response.id;
+        this.clientsWS[callbackID] = websocket;
+    }
     return {
       id: msg.id,
       request: msg,
