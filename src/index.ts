@@ -40,8 +40,7 @@ const defaultRPCMap: RPCMap = {
 export class JolocomWebServiceBase {
   agent: Agent
   rpcMap: RPCMap
-  clientsWS = [];
-
+  
   protected publicHostport?: string
   protected publicWsUrl!: string
   protected publicHttpUrl!: string
@@ -64,6 +63,9 @@ export class JolocomWebServiceBase {
   protected _callbacks: {
     [id: string]: (payload: string, websocket) => Promise<JSONWebToken<any> | void>
   } = {}
+  protected clientsWS: {
+    [id: string]: WebSocket
+  } = {}
 
   createInteractionCallbackURL(cb: (payload: string, websocket: WebSocket | undefined) => Promise<JSONWebToken<any> | void>) {
     const id = uuidv4()
@@ -81,21 +83,24 @@ export class JolocomWebServiceBase {
     // Pass the websocket to the call back to enable it to send addional custom data
     const tokenResp = await cb(payload.token, this.clientsWS[interxn.id])
 
-    try {
+    try {      
       if (this.clientsWS[interxn.id]) {
-        console.log("Client's WebSocket has been added to the list for the interxn.id", interxn.id);
-        const message = JSON.stringify({
-          id: interxn.id,
-          status: "success",
-          response: tokenResp,
-        });
-        this.clientsWS[interxn.id].send(message);
+        try {
+            console.log("Client's WebSocket has been added to the list for the interxn.id", interxn.id);
+            const message = JSON.stringify({
+              id: interxn.id,
+              status: "success",
+              response: tokenResp,
+            });
+            this.clientsWS[interxn.id].send(message);
+        } catch (error) {
+            this.clientsWS[interxn.id].send(
+              JSON.stringify({ id: interxn.id, status: "error", error })
+            );
+        }
       }
     } catch (error) {
-      if (this.clientsWS[interxn.id])
-        this.clientsWS[interxn.id].send(
-          JSON.stringify({ id: interxn.id, status: "error", error })
-        );
+      console.error("Someting when wrong while trying to send to the client over websocket", error);
     }
 
     if (tokenResp) {
