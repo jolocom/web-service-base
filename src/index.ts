@@ -23,15 +23,21 @@ interface JWTDesc {
   qr: string
 }
 
+interface WebSocket { send: (d: any) => void }
+
+type InteractionCallback = (payload: string) => Promise<JSONWebToken<any> | void>
+
 interface RPCHandlerCtx {
   createChannel: ({ description: string }) => Promise<Channel>
-  createInteractionCallbackURL: (cb: (payload: string) => Promise<JSONWebToken<any> | void>) => string
+  createInteractionCallbackURL: (cb: InteractionCallback) => string
   wrapJWT: (jwt: string | JSONWebToken<any>) => Promise<JWTDesc>
+  updateFrontend: (upd: Record<string, any>) => Promise<void>
 }
 
 interface RPCMap {
   [key: string]: (request: any, ctx: RPCHandlerCtx) => Promise<any>
 }
+interface RPCMessage { id: string, rpc: string, request: string }
 
 const defaultRPCMap: RPCMap = {
   // TODO
@@ -61,10 +67,10 @@ export class JolocomWebServiceBase {
   }
 
   protected _callbacks: {
-    [id: string]: (payload: string) => Promise<JSONWebToken<any> | void>
+    [id: string]: InteractionCallback
   } = {}
 
-  createInteractionCallbackURL(cb: (payload: string) => Promise<JSONWebToken<any> | void>) {
+  createInteractionCallbackURL(cb: InteractionCallback) {
     const id = uuidv4()
     this._callbacks[id] = cb
     return `${this.publicHttpUrl}${this.paths.interxn}/${id}`
@@ -75,13 +81,21 @@ export class JolocomWebServiceBase {
 
     const cb = this._callbacks[cbId]
     if (!cb) throw new Error('no callback for ' + cbId)
-    const tokenResp = await cb(payload.token)
-    if (tokenResp) {
-      return { token: tokenResp.encode() } // NOTE: legacy, smartwallet 1.9 expects this
+    const tokenOrJsonResp = await cb(payload.token)
+    if (tokenOrJsonResp instanceof JSONWebToken) {
+      return { token: tokenOrJsonResp.encode() } // NOTE: legacy, smartwallet 1.9 expects this
     } else {
       // TODO return nothing
       return ''
     }
+  }
+
+  async updateFrontend(msg: RPCMessage, ws: WebSocket, upd: Record<string, any>)
+  {
+    ws.send(JSON.stringify({
+      id: msg.id,
+      response: upd
+    }))
   }
 
   private _basePath = ''
@@ -113,14 +127,15 @@ export class JolocomWebServiceBase {
     return this.agent.channels.create(initInterxn)
   }
 
-  async processRPC(msg: { id: string, rpc: string, request: string }) {
+  async processRPC(msg: RPCMessage, ws?: WebSocket) {
     const handler = this.rpcMap[msg.rpc]
     if (!handler) throw new Error('unknown RPC Call "' + msg.rpc + '"')
 
     const ctx: RPCHandlerCtx = {
       wrapJWT: this.wrapJWT.bind(this),
       createChannel: this.createChannel.bind(this),
-      createInteractionCallbackURL: this.createInteractionCallbackURL.bind(this)
+      createInteractionCallbackURL: this.createInteractionCallbackURL.bind(this),
+      updateFrontend: this.updateFrontend.bind(this, msg, ws)
     }
     const response = await handler(msg.request, ctx)
     return {
